@@ -74,20 +74,20 @@ export CUSTOM_API_KEY="your-api-key"
 
 ```bash
 # Run web navigation with Claude 3.5 Sonnet
-python agentic_benchmark_runner.py --scenario web_navigation --model claude_3_5_sonnet
+python benchmark_runner.py --scenario web_navigation --model claude_3_5_sonnet
 
 # Run coding challenge with GPT-4
-python agentic_benchmark_runner.py --scenario human_eval --model gpt4o
+python benchmark_runner.py --scenario human_eval --model gpt4o
 
 # Run tool usage benchmark with custom task
-python agentic_benchmark_runner.py --scenario tool_bench --model custom_api --task-description "Create a data pipeline to analyze user behavior"
+python benchmark_runner.py --scenario tool_bench --model custom_api --task-description "Create a data pipeline to analyze user behavior"
 ```
 
 ### 4. Run Comprehensive Evaluation
 
 ```bash
 # Run all scenarios with multiple models
-python batch_agentic_runner.py --scenarios web_navigation swe_bench human_eval gaia_tasks tool_bench --models claude_3_5_sonnet gpt4o gemini_1_5_pro
+python batch_runner.py --scenarios web_navigation swe_bench human_eval gaia_tasks tool_bench --models claude_3_5_sonnet gpt4o gemini_1_5_pro
 
 # Generate comprehensive report
 python comprehensive_report.py
@@ -304,7 +304,7 @@ def execute_test(code: str, test_code: str) -> Dict:
 
 1. Create model client: `models/your_model_client.py`
 2. Implement required methods: `generate_response()`, `generate_with_tools()`
-3. Add to model configs in `agentic_benchmark_runner.py`
+3. Add to model configs in `benchmark_runner.py`
 4. Set up authentication and configuration
 
 ### Custom Evaluation Metrics
@@ -320,19 +320,19 @@ Extend evaluators to include domain-specific metrics:
 ### Research & Development
 ```bash
 # Compare models on specific capability
-python batch_agentic_runner.py --scenarios swe_bench --models claude_3_5_sonnet gpt4o gemini_1_5_pro
+python batch_runner.py --scenarios swe_bench --models claude_3_5_sonnet gpt4o gemini_1_5_pro
 
 # Evaluate coding performance 
-python agentic_benchmark_runner.py --scenario human_eval --model your_model
+python benchmark_runner.py --scenario human_eval --model your_model
 
 # Test tool usage efficiency
-python agentic_benchmark_runner.py --scenario tool_bench --model claude_3_5_sonnet --task-description "Optimize database queries and generate performance report"
+python benchmark_runner.py --scenario tool_bench --model claude_3_5_sonnet --task-description "Optimize database queries and generate performance report"
 ```
 
 ### Production Readiness Testing
 ```bash
 # Full evaluation suite
-python batch_agentic_runner.py --scenarios web_navigation swe_bench human_eval gaia_tasks tool_bench customer_support --models your_production_model
+python batch_runner.py --scenarios web_navigation swe_bench human_eval gaia_tasks tool_bench customer_support --models your_production_model
 
 # Generate deployment report
 python comprehensive_report.py
