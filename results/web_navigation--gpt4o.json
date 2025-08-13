@@ -1,0 +1,98 @@
+{
+  "scenario": "web_navigation",
+  "model": "gpt4o",
+  "prompt": "You are an expert web automation specialist. Plan and execute web navigation tasks on an e-commerce website.\n\nWEBSITE: http://127.0.0.1:8002 (Mock E-commerce Site)\n\nTASK: Navigate and complete basic e-commerce tasks\n\nINSTRUCTIONS:\n1. Analyze the task carefully\n2. Plan the optimal navigation sequence\n3. Consider error handling and verification steps\n4. Provide specific, actionable steps\n\nRESPONSE FORMAT:\n```json\n{\n  \"actions\": [\n    \"Navigate to http://127.0.0.1:8002\",\n    \"Click on 'Products' me...",
+  "output": "```json\n{\n  \"actions\": [\n    \"Navigate to http://127.0.0.1:8002\",\n    \"Verify the homepage has loaded by checking for the presence of the 'Products' menu\",\n    \"Click on the 'Products' menu or enter the \u2018Products\u2019 section of the website\",\n    \"Locate the search bar, typically found at the top of the page\",\n    \"Input the search term 'laptop' and initiate the search by pressing the search button\",\n    \"Wait for search results to load and handle any potential loading errors (e.g., retry if results do not load within a reasonable time)\",\n    \"Verify search results are displayed by checking for a list of products\",\n    \"Click on the first product listed in the search results\",\n    \"Wait for the product page to load and verify it by checking for an \u2018Add to Cart\u2019 button\",\n    \"Click the 'Add to Cart' button for the selected product\",\n    \"Verify that the product has been added to the cart by checking for a confirmation message or icon indicator\",\n    \"Navigate to the shopping cart through the cart icon or link, typically found in the website's header\",\n    \"Check the cart page to ensure the selected laptop is listed with correct details (e.g., price, quantity)\",\n    \"Click on the 'Checkout' button to proceed to the checkout process\",\n    \"Verify that the checkout page has loaded by checking for critical elements like the billing information form\"\n  ],\n  \"reasoning\": \"Each action in the sequence is focused on navigating through the e-commerce website efficiently while maintaining proper checks for errors and verifications. Starting from the homepage, actions are designed to seamlessly guide the user through the process of searching for a product (laptop), validating the appearance of product listings, adding an item to the cart, and proceeding to checkout. Error handling is considered by verifying each crucial step and implementing retry strategies where necessary.\",\n  \"expected_outcome\": \"Upon completing these actions, the user will have successfully navigated through the website to search for a laptop, add it to their shopping cart, and proceed to the checkout page, prepared for entering billing information and finalizing the purchase.\"\n}\n```",
+  "evaluation": {
+    "scores": {
+      "navigation_accuracy": 92,
+      "task_completion": 64.0625,
+      "error_handling": 74,
+      "efficiency": 90,
+      "overall_score": 80.32499999999999
+    },
+    "details": {
+      "task_scores": [
+        {
+          "task_id": "web_nav_001",
+          "description": "Navigate to products page and add laptop to cart",
+          "score": 100.0,
+          "max_score": 100,
+          "completion_rate": 1.0,
+          "completion_indicators": [
+            "Keywords matched: 4/4",
+            "Condition met: Navigate to products/laptops page...",
+            "Condition met: Select specific laptop product...",
+            "Condition met: Add laptop to cart...",
+            "Condition met: Verify cart contains laptop...",
+            "Multiple actions planned"
+          ]
+        },
+        {
+          "task_id": "web_nav_002",
+          "description": "Search for keyboard and check availability",
+          "score": 46.875,
+          "max_score": 75,
+          "completion_rate": 0.625,
+          "completion_indicators": [
+            "Keywords matched: 1/1",
+            "Condition met: Navigate to search results...",
+            "Multiple actions planned"
+          ]
+        },
+        {
+          "task_id": "web_nav_003",
+          "description": "Complete full purchase workflow",
+          "score": 59.375,
+          "max_score": 125,
+          "completion_rate": 0.475,
+          "completion_indicators": [
+            "Condition met: Add monitor to shopping cart...",
+            "Condition met: Navigate to cart/checkout page...",
+            "Condition met: Complete checkout process...",
+            "Multiple actions planned"
+          ]
+        },
+        {
+          "task_id": "web_nav_004",
+          "description": "Navigate categories to find specific electronics",
+          "score": 50.0,
+          "max_score": 100,
+          "completion_rate": 0.5,
+          "completion_indicators": [
+            "Keywords matched: 1/1",
+            "Multiple actions planned"
+          ]
+        }
+      ],
+      "feedback": [
+        "\ud83c\udf86 Excellent web navigation performance!",
+        "\u26a0\ufe0f Moderate task completion: 2/4"
+      ],
+      "actions_taken": [
+        "Navigate to http://127.0.0.1:8002",
+        "Verify the homepage has loaded by checking for the presence of the 'Products' menu",
+        "Click on the 'Products' menu or enter the \u2018Products\u2019 section of the website",
+        "Locate the search bar, typically found at the top of the page",
+        "Input the search term 'laptop' and initiate the search by pressing the search button",
+        "Wait for search results to load and handle any potential loading errors (e.g., retry if results do not load within a reasonable time)",
+        "Verify search results are displayed by checking for a list of products",
+        "Click on the first product listed in the search results",
+        "Wait for the product page to load and verify it by checking for an \u2018Add to Cart\u2019 button",
+        "Click the 'Add to Cart' button for the selected product",
+        "Verify that the product has been added to the cart by checking for a confirmation message or icon indicator",
+        "Navigate to the shopping cart through the cart icon or link, typically found in the website's header",
+        "Check the cart page to ensure the selected laptop is listed with correct details (e.g., price, quantity)",
+        "Click on the 'Checkout' button to proceed to the checkout process",
+        "Verify that the checkout page has loaded by checking for critical elements like the billing information form"
+      ],
+      "errors": [],
+      "parsed_actions": 15,
+      "reasoning_quality": 40
+    },
+    "passed": true
+  },
+  "execution_time_sec": 8.872528076171875,
+  "timestamp": 1755070784.6380851,
+  "task_parameters": {}
+}

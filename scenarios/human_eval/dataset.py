@@ -1,60 +1,149 @@
 """
-HumanEval dataset loader - uses actual HumanEval problems
+HumanEval dataset loader - Direct Hugging Face Hub integration
+Replaces manual dataset with authentic HumanEval from HF
 """
-import json
 from typing import Dict, List
+from hf_dataset_loader import HuggingFaceDatasetLoader
 
-# Real HumanEval problems (subset for demonstration)
-HUMAN_EVAL_PROBLEMS = [
-    {
-        "task_id": "HumanEval/0",
-        "prompt": "from typing import List\n\n\ndef has_close_elements(numbers: List[float], threshold: float) -> bool:\n    \"\"\" Check if in given list of numbers, are any two numbers closer to each other than\n    given threshold.\n    >>> has_close_elements([1.0, 2.0, 3.0], 0.5)\n    False\n    >>> has_close_elements([1.0, 2.8, 3.0, 4.0, 5.0, 2.0], 0.3)\n    True\n    \"\"\"\n",
-        "canonical_solution": "    for idx, elem in enumerate(numbers):\n        for idx2, elem2 in enumerate(numbers):\n            if idx != idx2:\n                distance = abs(elem - elem2)\n                if distance < threshold:\n                    return True\n\n    return False\n",
-        "test": "def check(candidate):\n    assert candidate([1.0, 2.0, 3.9, 4.0, 5.0, 2.2], 0.3) == True\n    assert candidate([1.0, 2.0, 3.9, 4.0, 5.0, 2.2], 0.05) == False\n    assert candidate([1.0, 2.0, 5.9, 4.0, 5.0], 0.95) == True\n    assert candidate([1.0, 2.0, 5.9, 4.0, 5.0], 0.8) == False\n    assert candidate([1.0, 2.0, 3.0, 4.0, 5.0, 2.0], 0.1) == True\n    assert candidate([1.1, 2.2, 3.1, 4.1, 5.1], 1.0) == True\n    assert candidate([1.1, 2.2, 3.1, 4.1, 5.1], 0.5) == False\n\ncheck(has_close_elements)"
-    },
-    {
-        "task_id": "HumanEval/1", 
-        "prompt": "from typing import List\n\n\ndef separate_paren_groups(paren_string: str) -> List[str]:\n    \"\"\" Input to this function is a string containing multiple groups of nested parentheses. Your goal is to\n    separate those group into separate strings and return the list of those.\n    Separate groups are balanced (each open brace is properly closed) and not nested within each other\n    Ignore any spaces in the input string.\n    >>> separate_paren_groups('( ) (( )) (( )( ))')\n    ['()', '(())', '(()())']\n    \"\"\"\n",
-        "canonical_solution": "    result = []\n    current_string = []\n    current_depth = 0\n\n    for c in paren_string:\n        if c == '(':\n            current_depth += 1\n            current_string.append(c)\n        elif c == ')':\n            current_depth -= 1\n            current_string.append(c)\n\n            if current_depth == 0:\n                result.append(''.join(current_string))\n                current_string = []\n\n    return result\n",
-        "test": "def check(candidate):\n    assert candidate('(()()) ((())) () ((())()())') == ['(()())', '((()))', '()', '((())()())']\n    assert candidate('() (()) ((())) (((())))') == ['()', '(())', '((()))', '(((())))']\n    assert candidate('(()(())((())))') == ['(()(())((())))'] \n    assert candidate('( ) (( )) (( )( ))') == ['()', '(())', '(()())']\n\ncheck(separate_paren_groups)"
-    },
-    {
-        "task_id": "HumanEval/2",
-        "prompt": "def truncate_number(number: float) -> float:\n    \"\"\" Given a positive floating point number, it can be decomposed into\n    and integer part (largest integer smaller than given number) and decimals\n    (leftover part always smaller than 1).\n\n    Return the decimal part of the number.\n    >>> truncate_number(3.5)\n    0.5\n    \"\"\"\n",
-        "canonical_solution": "    return number % 1.0\n",
-        "test": "def check(candidate):\n    assert candidate(3.5) == 0.5\n    assert abs(candidate(1.33) - 0.33) < 1e-6\n    assert abs(candidate(123.456) - 0.456) < 1e-6\n\ncheck(truncate_number)"
-    }
-]
-
-def get_human_eval_problems() -> List[Dict]:
-    """Get HumanEval problems for evaluation."""
-    return HUMAN_EVAL_PROBLEMS
+def get_human_eval_problems(limit: int = None) -> List[Dict]:
+    """Get HumanEval problems directly from Hugging Face."""
+    loader = HuggingFaceDatasetLoader()
+    dataset = loader.load_benchmark_dataset('humaneval', limit=limit)
+    return dataset['problems']
 
 def get_problem_by_id(task_id: str) -> Dict:
-    """Get a specific problem by task ID."""
-    for problem in HUMAN_EVAL_PROBLEMS:
+    """Get a specific problem by task ID from HF dataset."""
+    problems = get_human_eval_problems()
+    for problem in problems:
         if problem["task_id"] == task_id:
             return problem
-    raise ValueError(f"Problem {task_id} not found")
+    raise ValueError(f"Problem {task_id} not found in HumanEval dataset")
 
 def execute_test(code: str, test_code: str) -> Dict:
-    """Execute code against test cases."""
+    """Execute code against HumanEval test cases with enhanced error handling."""
+    import sys
+    import io
+    import traceback
+    import signal
+    import contextlib
+    
+    def timeout_handler(signum, frame):
+        raise TimeoutError("Code execution timed out")
+    
     try:
-        # Create a safe execution environment
-        exec_globals = {}
+        # Create isolated execution environment
+        exec_globals = {
+            '__builtins__': {
+                'abs': abs, 'all': all, 'any': any, 'ascii': ascii, 'bin': bin,
+                'bool': bool, 'chr': chr, 'dict': dict, 'divmod': divmod,
+                'enumerate': enumerate, 'filter': filter, 'float': float,
+                'format': format, 'frozenset': frozenset, 'hex': hex, 'int': int,
+                'len': len, 'list': list, 'map': map, 'max': max, 'min': min,
+                'oct': oct, 'ord': ord, 'pow': pow, 'range': range, 'repr': repr,
+                'reversed': reversed, 'round': round, 'set': set, 'sorted': sorted,
+                'str': str, 'sum': sum, 'tuple': tuple, 'type': type, 'zip': zip,
+                'Exception': Exception, 'ValueError': ValueError, 'TypeError': TypeError,
+                'IndexError': IndexError, 'KeyError': KeyError, 'AttributeError': AttributeError,
+                '__import__': __import__, 'hasattr': hasattr, 'getattr': getattr,
+                'setattr': setattr, 'delattr': delattr, 'callable': callable,
+                'isinstance': isinstance, 'issubclass': issubclass
+            }
+        }
         
-        # Execute the solution code
-        exec(code, exec_globals)
+        # Add common imports that are safe
+        safe_imports = {
+            'math': ['math', 'sqrt', 'ceil', 'floor', 'log', 'exp', 'sin', 'cos'],
+            'collections': ['Counter', 'defaultdict', 'deque'],
+            'itertools': ['combinations', 'permutations', 'product'],
+            'functools': ['reduce'],
+            'typing': ['List', 'Dict', 'Set', 'Tuple', 'Optional', 'Union']
+        }
         
-        # Execute the test code
-        exec(test_code, exec_globals)
+        for module, items in safe_imports.items():
+            try:
+                mod = __import__(module)
+                for item in items:
+                    if hasattr(mod, item):
+                        exec_globals[item] = getattr(mod, item)
+            except ImportError:
+                pass
         
+        # Set timeout for code execution (5 seconds)
+        signal.signal(signal.SIGALRM, timeout_handler)
+        signal.alarm(5)
+        
+        # Capture stdout/stderr
+        old_stdout = sys.stdout
+        old_stderr = sys.stderr
+        stdout_capture = io.StringIO()
+        stderr_capture = io.StringIO()
+        
+        try:
+            sys.stdout = stdout_capture
+            sys.stderr = stderr_capture
+            
+            # Execute the solution code first
+            exec(code, exec_globals)
+            
+            # Then execute the test code
+            exec(test_code, exec_globals)
+            
+            # If we get here, all tests passed
+            return {
+                "passed": True,
+                "result": "All tests passed",
+                "stdout": stdout_capture.getvalue(),
+                "stderr": stderr_capture.getvalue()
+            }
+            
+        finally:
+            sys.stdout = old_stdout
+            sys.stderr = old_stderr
+            signal.alarm(0)  # Cancel timeout
+            
+    except TimeoutError:
         return {
-            "passed": True,
-            "result": "All tests passed"
+            "passed": False,
+            "result": "Code execution timed out (>5 seconds)"
+        }
+    except SyntaxError as e:
+        return {
+            "passed": False,
+            "result": f"Syntax error: {str(e)}"
+        }
+    except NameError as e:
+        return {
+            "passed": False,
+            "result": f"Name error: {str(e)}"
+        }
+    except AssertionError as e:
+        return {
+            "passed": False,
+            "result": f"Test failed: {str(e) if str(e) else 'Assertion failed'}"
         }
     except Exception as e:
         return {
             "passed": False,
-            "result": str(e)
+            "result": f"{type(e).__name__}: {str(e)}",
+            "traceback": traceback.format_exc()
         }
+
+def get_dataset_info() -> Dict:
+    """Get information about the HumanEval dataset."""
+    return {
+        "name": "OpenAI HumanEval",
+        "source": "huggingface:openai_humaneval", 
+        "description": "Hand-written programming problems for code generation evaluation",
+        "total_problems": 164,
+        "url": "https://huggingface.co/datasets/openai_humaneval",
+        "paper": "https://arxiv.org/abs/2107.03374"
+    }
+
+# Legacy compatibility function
+def get_human_eval_dataset() -> Dict:
+    """Legacy function for compatibility."""
+    return {
+        "type": "code_execution",
+        "problems": get_human_eval_problems(),
+        "info": get_dataset_info()
+    }

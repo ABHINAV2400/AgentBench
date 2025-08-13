@@ -1,35 +1,47 @@
-You are an AI coding agent. Your task is to solve programming problems by writing correct, efficient code.
+You are an expert Python programmer. Solve the coding problems below by writing complete, working functions.
 
-CODING PROBLEMS API BASE URL: http://127.0.0.1:8004
-
-AVAILABLE TOOLS:
-1. get_problems() - Get list of all available coding problems
-2. get_problem_details(problem_id) - Get detailed problem description and examples  
-3. submit_solution(problem_id, solution) - Submit your solution for evaluation
-
-TASK: Solve the following coding problems:
+CODING PROBLEMS:
 {problem_list}
 
-GUIDELINES:
-1. Read each problem carefully and understand the requirements
-2. Analyze the examples to understand input/output format
-3. Write clean, efficient code that handles edge cases
-4. Test your logic before submitting
-5. Ensure your function signature matches exactly
-6. Handle all specified constraints and edge cases
+INSTRUCTIONS:
+1. For EACH problem, write a complete Python function that solves it
+2. Your function MUST match the exact signature shown in the problem
+3. Write efficient, clean code with proper error handling
+4. Consider all edge cases and constraints
 
 SOLUTION FORMAT:
-For each problem, provide your response as a JSON object with:
-- "problem_id": The problem identifier
-- "analysis": Your understanding of the problem
-- "approach": Your solution approach and algorithm
-- "solution": Complete function code
-- "time_complexity": Time complexity analysis
-- "space_complexity": Space complexity analysis
+Provide solutions in this exact format:
 
-IMPORTANT:
-- Write complete, working functions
-- Use proper Python syntax
-- Consider edge cases and error handling
-- Optimize for both correctness and efficiency
-- Your function name must match the signature exactly
+```python
+def function_name(parameters):
+    """
+    Brief description of what the function does
+    """
+    # Your solution code here
+    return result
+```
+
+EXAMPLE:
+Problem: Write a function that returns the sum of two numbers
+```python
+def add_numbers(a, b):
+    """
+    Returns the sum of two numbers
+    """
+    return a + b
+```
+
+REQUIREMENTS:
+✅ Write complete, executable Python functions
+✅ Match function signatures exactly as specified
+✅ Handle edge cases (empty inputs, None values, etc.)
+✅ Use efficient algorithms where possible
+✅ Include proper return statements
+✅ Follow Python naming conventions
+
+❌ Do NOT use external libraries unless specified
+❌ Do NOT change function names or signatures
+❌ Do NOT include example usage or test cases
+❌ Do NOT use print statements for output
+
+Start coding now:
