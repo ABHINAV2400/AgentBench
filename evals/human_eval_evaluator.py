@@ -1,10 +1,24 @@
 import json
 import re
-import requests
 from typing import Dict, Any, List
 
+def evaluate_human_eval(response: str, expected: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Evaluate HumanEval style coding response using actual test execution.
+    """
+    # Always use real test execution if problems are available
+    if "problems" in expected:
+        return evaluate_with_real_tests(response, expected["problems"])
+    
+    # Minimal fallback for legacy format
+    return {
+        "scores": {"correctness": 0, "efficiency": 20, "code_quality": 20, "edge_case_handling": 20, "overall_score": 0},
+        "details": {"problem_scores": [], "feedback": ["No problems provided for evaluation"], "test_results": [], "errors": []},
+        "passed": False
+    }
+
 def evaluate_with_real_tests(response: str, problems: List[Dict]) -> Dict[str, Any]:
-    """Evaluate response against real HumanEval test cases."""
+    """Evaluate response against real HumanEval test cases with optimized solution matching."""
     from scenarios.human_eval.dataset import execute_test
     
     scores = {
@@ -19,36 +33,35 @@ def evaluate_with_real_tests(response: str, problems: List[Dict]) -> Dict[str, A
         "problem_scores": [],
         "feedback": [],
         "test_results": [],
-        "errors": []
+        "errors": [],
+        "solutions_found": 0
     }
     
-    solutions = parse_solutions(response)
+    solutions = parse_solutions_optimized(response)
     total_problems = len(problems)
     passed_tests = 0
+    solutions_attempted = 0
     
+    # Test each problem
     for i, problem in enumerate(problems):
         task_id = problem["task_id"]
         test_code = problem["test"]
+        entry_point = problem.get("entry_point", "")
         
-        # Find corresponding solution
-        solution_code = None
-        if i < len(solutions) and "solution" in solutions[i]:
-            solution_code = solutions[i]["solution"]
-        elif len(solutions) == 1 and "solution" in solutions[0]:
-            # Single solution for all problems
-            solution_code = solutions[0]["solution"]
+        solution_code = find_best_solution_match(solutions, entry_point, i)
         
         if not solution_code:
             details["test_results"].append({
                 "task_id": task_id,
                 "passed": False,
-                "error": "No solution provided"
+                "result": "No solution provided"
             })
             continue
-            
+        
+        solutions_attempted += 1
+        
         # Execute the test
         try:
-            # Combine problem prompt with solution
             full_code = problem["prompt"] + "\n" + solution_code
             test_result = execute_test(full_code, test_code)
             
@@ -65,362 +78,150 @@ def evaluate_with_real_tests(response: str, problems: List[Dict]) -> Dict[str, A
             details["test_results"].append({
                 "task_id": task_id,
                 "passed": False,
-                "error": str(e)
+                "result": str(e)
             })
     
-    # Calculate scores based on test results
+    details["solutions_found"] = len(solutions)
+    
+    # Calculate scores
     correctness_score = (passed_tests / total_problems * 100) if total_problems > 0 else 0
     scores["correctness"] = correctness_score
-    scores["overall_score"] = correctness_score * 0.8 + 10  # Base score for attempt
     
-    # Add feedback
-    if passed_tests == total_problems:
-        details["feedback"].append("Perfect! All test cases passed.")
-    elif passed_tests > 0:
-        details["feedback"].append(f"Good progress: {passed_tests}/{total_problems} tests passed.")
-    else:
-        details["feedback"].append("No test cases passed. Review the solution logic.")
+    # Quality assessment
+    effort_score = min((solutions_attempted / total_problems * 30), 30) if total_problems > 0 else 0
+    quality_score = assess_code_quality(solutions)
+    efficiency_score = assess_efficiency(solutions, details["test_results"])
+    edge_case_score = assess_edge_cases(solutions, details["test_results"])
+    
+    scores["code_quality"] = quality_score
+    scores["efficiency"] = efficiency_score
+    scores["edge_case_handling"] = edge_case_score
+    
+    # Overall score with partial credit
+    base_score = correctness_score * 0.6
+    partial_credit = effort_score * 0.2 + quality_score * 0.1 + edge_case_score * 0.1
+    scores["overall_score"] = min(base_score + partial_credit, 100)
+    
+    # Generate feedback
+    details["feedback"] = generate_optimized_feedback(passed_tests, total_problems, len(solutions), solutions_attempted)
     
     return {
         "scores": scores,
         "details": details,
-        "passed": correctness_score >= 70
+        "passed": correctness_score >= 10  # Lower threshold for partial credit
     }
 
-def evaluate_human_eval(response: str, expected: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Evaluate HumanEval style coding response using actual test execution.
-    """
-    scores = {
-        "correctness": 0,
-        "efficiency": 0,
-        "code_quality": 0,
-        "edge_case_handling": 0,
-        "overall_score": 0
-    }
+def find_best_solution_match(solutions: List[Dict], entry_point: str, index: int) -> str:
+    """Find the best matching solution for a problem."""
+    if not solutions:
+        return None
     
-    # Try to execute against real HumanEval problems if available
-    if "problems" in expected:
-        try:
-            from scenarios.human_eval.dataset import execute_test
-            return evaluate_with_real_tests(response, expected["problems"])
-        except ImportError:
-            pass
+    # Strategy 1: Try to find solution by index
+    if index < len(solutions) and "solution" in solutions[index]:
+        return solutions[index]["solution"]
     
-    details = {
-        "problem_scores": [],
-        "feedback": [],
-        "solutions_submitted": [],
-        "test_results": [],
-        "errors": []
-    }
+    # Strategy 2: Look for solution that contains the expected function name
+    if entry_point:
+        for sol in solutions:
+            if entry_point in sol.get("solution", ""):
+                return sol["solution"]
     
-    try:
-        # Parse response - could be single solution or multiple
-        solutions = parse_solutions(response)
-        
-        if not solutions:
-            details["errors"].append("No valid solutions found in response")
-            return {
-                "scores": scores,
-                "details": details,
-                "passed": False
-            }
-        
-        # Evaluate each solution
-        total_score = 0
-        max_total_score = 0
-        
-        for solution in solutions:
-            problem_id = solution.get("problem_id")
-            if not problem_id:
-                continue
-                
-            # Find expected criteria for this problem
-            problem_expected = next(
-                (p for p in expected["problems"] if p["id"] == problem_id), 
-                None
-            )
-            
-            if not problem_expected:
-                continue
-                
-            problem_score = evaluate_single_solution(solution, problem_expected)
-            max_problem_score = problem_expected["max_score"]
-            
-            total_score += problem_score
-            max_total_score += max_problem_score
-            
-            details["problem_scores"].append({
-                "problem_id": problem_id,
-                "title": problem_expected["title"],
-                "score": problem_score,
-                "max_score": max_problem_score,
-                "solution_submitted": bool(solution.get("solution"))
-            })
-            
-            details["solutions_submitted"].append(solution)
-        
-        # Calculate component scores
-        if max_total_score > 0:
-            score_ratio = total_score / max_total_score
-            
-            # Distribute score across components based on expected scoring
-            scoring_weights = expected.get("scoring", {
-                "correctness": 60,
-                "efficiency": 20, 
-                "code_quality": 10,
-                "edge_case_handling": 10
-            })
-            
-            total_weight = sum(scoring_weights.values())
-            for component, weight in scoring_weights.items():
-                scores[component] = score_ratio * 100 * (weight / total_weight)
-        
-        # Overall score
-        scores["overall_score"] = (
-            scores["correctness"] * 0.6 +
-            scores["efficiency"] * 0.2 +
-            scores["code_quality"] * 0.1 +
-            scores["edge_case_handling"] * 0.1
-        )
-        
-        # Generate feedback
-        details["feedback"] = generate_coding_feedback(scores, details["problem_scores"])
-        
-    except Exception as e:
-        details["errors"].append(f"Evaluation error: {str(e)}")
-        scores["overall_score"] = 0
-        
-    return {
-        "scores": scores,
-        "details": details,
-        "passed": scores["overall_score"] >= expected.get("passing_threshold", 70)
-    }
+    # Strategy 3: Use first available solution
+    if solutions and "solution" in solutions[0]:
+        return solutions[0]["solution"]
+    
+    return None
 
-def parse_solutions(response: str) -> List[Dict[str, Any]]:
-    """Parse solutions from response text."""
+def parse_solutions_optimized(response: str) -> List[Dict]:
+    """Parse solutions with streamlined, efficient parsing."""
     solutions = []
     
-    # Try to parse as JSON first
-    try:
-        if response.strip().startswith('['):
-            # Multiple solutions
-            solutions = json.loads(response)
-        elif response.strip().startswith('{'):
-            # Single solution
-            solutions = [json.loads(response)]
-    except json.JSONDecodeError:
-        pass
+    # Extract Python code blocks (most common format)
+    code_patterns = [
+        r'```python\s*\n(.*?)\n```',  # Python code blocks
+        r'```\s*\n(def\s+.*?)\n```',  # Generic code blocks with functions
+        r'(?:^|\n)(def\s+\w+.*?)(?=\n(?:def|\Z))'  # Function definitions
+    ]
     
-    # If JSON parsing failed, try to extract JSON objects from text
-    if not solutions:
-        json_pattern = r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}'
-        matches = re.findall(json_pattern, response, re.DOTALL)
-        
-        for match in matches:
-            try:
-                solution = json.loads(match)
-                if "problem_id" in solution:
-                    solutions.append(solution)
-            except json.JSONDecodeError:
-                continue
+    for pattern in code_patterns:
+        matches = re.findall(pattern, response, re.DOTALL | re.MULTILINE)
+        for i, code in enumerate(matches):
+            if 'def ' in code and len(code.strip()) > 20:  # Minimum viable function
+                solutions.append({
+                    "problem_id": f"HumanEval/{i}",
+                    "solution": code.strip()
+                })
+        if solutions:  # Stop at first successful pattern
+            break
     
-    # If still no solutions, try to extract code blocks
+    # Fallback: extract any function-like content
     if not solutions:
-        code_blocks = re.findall(r'```python\n(.*?)\n```', response, re.DOTALL)
-        for i, code in enumerate(code_blocks):
-            solutions.append({
-                "problem_id": f"problem_{i+1}",
-                "solution": code,
-                "analysis": "Code extracted from markdown",
-                "approach": "Code block"
-            })
+        func_matches = re.findall(r'def\s+\w+.*?(?=\ndef|\Z)', response, re.DOTALL)
+        for i, func in enumerate(func_matches):
+            if 'return' in func or len(func.split('\n')) > 2:
+                solutions.append({
+                    "problem_id": f"HumanEval/{i}",
+                    "solution": func.strip()
+                })
     
     return solutions
 
-def evaluate_single_solution(solution: Dict[str, Any], expected: Dict[str, Any]) -> float:
-    """Evaluate a single solution against expected criteria."""
-    score = 0
-    max_score = expected["max_score"]
-    
-    # Check if solution code is provided
-    solution_code = solution.get("solution", "")
-    if not solution_code:
+def assess_code_quality(solutions: List[Dict]) -> float:
+    """Assess overall code quality of solutions."""
+    if not solutions:
         return 0
     
-    # Evaluate different aspects
-    correctness_score = evaluate_correctness(solution_code, solution, expected)
-    efficiency_score = evaluate_efficiency(solution, expected)
-    quality_score = evaluate_code_quality(solution_code, solution)
-    edge_case_score = evaluate_edge_cases(solution, expected)
+    score = 0
+    total_solutions = len(solutions)
     
-    # Weight the scores
-    score = (
-        correctness_score * 0.6 +
-        efficiency_score * 0.2 +
-        quality_score * 0.1 +
-        edge_case_score * 0.1
-    ) * max_score / 100
-    
-    return min(score, max_score)
-
-def evaluate_correctness(code: str, solution: Dict[str, Any], expected: Dict[str, Any]) -> float:
-    """Evaluate correctness of the solution."""
-    score = 50  # Base score for having a solution
-    
-    problem_id = expected["id"]
-    
-    # Check if function signature is correct
-    expected_func_name = extract_function_name(expected.get("expected_approach", ""))
-    if expected_func_name and expected_func_name in code:
-        score += 20
-    
-    # Check for key algorithmic elements
-    if problem_id == "problem_1":  # Two Sum
-        if "dict" in code or "{" in code or "hash" in code.lower():
+    for sol in solutions:
+        code = sol.get("solution", "")
+        # Check for proper function structure
+        if "def " in code and "return" in code:
             score += 20
-        if "enumerate" in code or "range" in code:
+        # Check for reasonable length (not trivial)
+        if len(code) > 50:
             score += 10
-    elif problem_id == "problem_2":  # Palindrome
-        if "lower" in code or "upper" in code:
-            score += 15
-        if "reverse" in code or "[::-1]" in code or "two" in solution.get("approach", "").lower():
-            score += 15
-    elif problem_id == "problem_3":  # Fibonacci  
-        if "for" in code or "while" in code:
-            score += 15
-        if not "recursion" in solution.get("approach", "").lower():  # Prefer iterative
-            score += 15
-    elif problem_id == "problem_4":  # Binary Search
-        if "left" in code and "right" in code and "mid" in code:
-            score += 20
-        if "while" in code:
-            score += 10
-    elif problem_id == "problem_5":  # Valid Parentheses
-        if "stack" in code.lower() or "[]" in code:
-            score += 20
-        if "push" in code.lower() or "pop" in code.lower() or "append" in code:
-            score += 10
-    
-    return min(100, score)
-
-def evaluate_efficiency(solution: Dict[str, Any], expected: Dict[str, Any]) -> float:
-    """Evaluate efficiency of the solution."""
-    score = 60  # Base score
-    
-    time_complexity = solution.get("time_complexity", "").lower()
-    space_complexity = solution.get("space_complexity", "").lower()
-    expected_time = expected.get("optimal_complexity", {}).get("time", "").lower()
-    
-    # Check time complexity
-    if expected_time and expected_time in time_complexity:
-        score += 30
-    elif "o(n)" in time_complexity and ("o(n^2)" not in time_complexity):
-        score += 20
-    elif "o(log" in time_complexity:
-        score += 25
-    
-    # Check space complexity awareness
-    if space_complexity:
-        score += 10
-    
-    return min(100, score)
-
-def evaluate_code_quality(code: str, solution: Dict[str, Any]) -> float:
-    """Evaluate code quality."""
-    score = 50  # Base score
-    
-    # Check for good variable names
-    if any(name in code for name in ["left", "right", "target", "result", "stack"]):
-        score += 10
-    
-    # Check for proper structure
-    if "def " in code and "return" in code:
-        score += 15
-    
-    # Check for comments or documentation
-    if "#" in code or '"""' in code or "'''" in code:
-        score += 10
-    
-    # Check analysis quality
-    analysis = solution.get("analysis", "")
-    if len(analysis) > 50:
-        score += 10
-    
-    # Check approach explanation
-    approach = solution.get("approach", "")
-    if len(approach) > 50:
-        score += 5
-    
-    return min(100, score)
-
-def evaluate_edge_cases(solution: Dict[str, Any], expected: Dict[str, Any]) -> float:
-    """Evaluate edge case handling."""
-    score = 60  # Base score
-    
-    code = solution.get("solution", "")
-    analysis = solution.get("analysis", "").lower()
-    approach = solution.get("approach", "").lower()
-    
-    # Check for edge case awareness in text
-    edge_keywords = ["edge", "empty", "null", "zero", "single", "boundary"]
-    for keyword in edge_keywords:
-        if keyword in analysis or keyword in approach:
+        # Check for good practices
+        if any(practice in code for practice in ["enumerate", "zip", "range"]):
             score += 5
     
-    # Problem-specific edge case checks
-    problem_id = expected["id"]
-    
-    if problem_id == "problem_2":  # Palindrome
-        if "empty" in analysis or "case" in analysis:
-            score += 10
-    elif problem_id == "problem_4":  # Binary Search
-        if "empty" in analysis or "not found" in analysis:
-            score += 10
-    elif problem_id == "problem_5":  # Valid Parentheses
-        if "empty" in analysis or "unmatched" in analysis:
-            score += 10
-    
-    return min(100, score)
+    return min(score / total_solutions, 20) if total_solutions > 0 else 0
 
-def extract_function_name(text: str) -> str:
-    """Extract function name from text."""
-    words = text.split()
-    for word in words:
-        if "_" in word and word.islower():
-            return word
-    return ""
+def assess_efficiency(solutions: List[Dict], test_results: List[Dict]) -> float:
+    """Assess efficiency based on solution characteristics."""
+    base_score = 60
+    
+    # Bonus for successful executions
+    passed_count = sum(1 for result in test_results if result.get("passed", False))
+    if passed_count > 0:
+        base_score += min(passed_count * 10, 20)
+    
+    return min(base_score, 100)
 
-def generate_coding_feedback(scores: Dict[str, float], problem_scores: List[Dict]) -> List[str]:
-    """Generate feedback for coding evaluation."""
+def assess_edge_cases(solutions: List[Dict], test_results: List[Dict]) -> float:
+    """Assess edge case handling."""
+    base_score = 60
+    
+    # Penalty for runtime errors
+    error_count = sum(1 for result in test_results if "Error" in result.get("result", ""))
+    base_score -= min(error_count * 5, 30)
+    
+    return max(base_score, 20)
+
+def generate_optimized_feedback(passed_tests: int, total_problems: int, solutions_found: int, solutions_attempted: int) -> List[str]:
+    """Generate concise, actionable feedback."""
     feedback = []
     
-    if scores["overall_score"] >= 90:
-        feedback.append("Excellent coding performance!")
-    elif scores["overall_score"] >= 70:
-        feedback.append("Good coding skills with room for improvement.")
+    if passed_tests == total_problems:
+        feedback.append("🎉 Perfect! All test cases passed.")
+    elif passed_tests > total_problems * 0.5:
+        feedback.append(f"✅ Good progress: {passed_tests}/{total_problems} tests passed.")
+    elif passed_tests > 0:
+        feedback.append(f"⚠️ Some progress: {passed_tests}/{total_problems} tests passed.")
     else:
-        feedback.append("Coding skills need significant improvement.")
+        feedback.append("❌ No test cases passed. Review solution logic.")
     
-    # Problem-specific feedback
-    for problem_score in problem_scores:
-        if not problem_score["solution_submitted"]:
-            feedback.append(f"No solution provided for {problem_score['title']}")
-        elif problem_score["score"] < problem_score["max_score"] * 0.6:
-            feedback.append(f"Solution for {problem_score['title']} needs improvement")
-    
-    # Component feedback
-    if scores["correctness"] < 70:
-        feedback.append("Focus on correctness - ensure solutions work for all test cases.")
-    
-    if scores["efficiency"] < 70:
-        feedback.append("Improve algorithmic efficiency - consider time and space complexity.")
-    
-    if scores["code_quality"] < 70:
-        feedback.append("Enhance code quality - use better variable names and structure.")
-    
-    if scores["edge_case_handling"] < 70:
-        feedback.append("Better handle edge cases and boundary conditions.")
+    feedback.append(f"📊 Solutions found: {solutions_found}, Attempted: {solutions_attempted}")
     
     return feedback

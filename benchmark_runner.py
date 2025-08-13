@@ -63,7 +63,7 @@ def start_mock_server(scenario_name):
         raise FileNotFoundError(f"Mock server not found: {mock_server_path}")
     
     print(f"Starting mock server for {scenario_name}...")
-    p = subprocess.Popen(['python', str(mock_server_path)])
+    p = subprocess.Popen(['python3', str(mock_server_path)])
     time.sleep(2)  # Wait for server to start
     
     # Verify server is running
@@ -97,6 +97,27 @@ def load_scenario_prompt(scenario_name):
         raise FileNotFoundError(f"Prompt file not found: {path}")
     return path.read_text(encoding='utf-8')
 
+def format_humaneval_problems(problems):
+    """Format HumanEval problems for inclusion in prompt."""
+    formatted_problems = []
+    for i, problem in enumerate(problems, 1):
+        task_id = problem.get('task_id', f'Problem {i}')
+        prompt = problem.get('prompt', 'No description available')
+        
+        # Clean up the prompt by removing the incomplete function
+        lines = prompt.split('\n')
+        problem_lines = []
+        for line in lines:
+            if line.strip().startswith('def ') and ':' in line:
+                break  # Stop before the incomplete function definition
+            problem_lines.append(line)
+        
+        clean_prompt = '\n'.join(problem_lines).strip()
+        if clean_prompt:
+            formatted_problems.append(f"**{task_id}**:\n{clean_prompt}\n")
+    
+    return '\n'.join(formatted_problems)
+
 def load_benchmark_dataset(scenario_name):
     """Load real benchmark datasets instead of expected.json files."""
     try:
@@ -129,18 +150,42 @@ def load_benchmark_dataset(scenario_name):
 
 def customize_prompt_for_scenario(prompt_template, scenario_name, task_params=None):
     """Customize prompt template with scenario-specific parameters."""
-    if scenario_name == 'web_navigation' and task_params:
+    if not task_params:
+        task_params = {}
+    
+    if scenario_name == 'web_navigation':
         return prompt_template.format(task_description=task_params.get('task_description', 'Navigate and complete basic e-commerce tasks'))
-    elif scenario_name == 'swe_bench' and task_params:
+    elif scenario_name == 'swe_bench':
         return prompt_template.format(issue_description=task_params.get('issue_description', 'Add missing functionality and fix bugs'))
-    elif scenario_name == 'human_eval' and task_params:
-        return prompt_template.format(problem_list=task_params.get('problem_list', 'Solve all available coding problems'))
-    elif scenario_name == 'gaia_tasks' and task_params:
+    elif scenario_name == 'human_eval':
+        # Load actual problems for HumanEval
+        if 'problem_list' not in task_params:
+            try:
+                from scenarios.human_eval.dataset import get_human_eval_problems
+                problems = get_human_eval_problems(limit=task_params.get('limit', 5))  # Default to 5 for testing
+                problem_list = format_humaneval_problems(problems)
+                task_params['problem_list'] = problem_list
+            except Exception as e:
+                task_params['problem_list'] = 'Solve coding problems as they are provided.'
+        return prompt_template.format(problem_list=task_params.get('problem_list'))
+    elif scenario_name == 'gaia_tasks':
         return prompt_template.format(task_description=task_params.get('task_description', 'Complete general assistant tasks requiring multi-step reasoning'))
-    elif scenario_name == 'tool_bench' and task_params:
+    elif scenario_name == 'tool_bench':
         return prompt_template.format(task_description=task_params.get('task_description', 'Complete complex multi-step tasks using available tools and APIs'))
+    elif scenario_name == 'customer_support':
+        return prompt_template.format(task_description=task_params.get('task_description', 'Handle customer support requests and resolve issues'))
     else:
-        return prompt_template
+        # Try to replace any remaining placeholders with defaults
+        template_params = {
+            'task_description': 'Complete the assigned tasks',
+            'problem_list': 'Solve the provided problems',
+            'issue_description': 'Address the described issues'
+        }
+        template_params.update(task_params)
+        try:
+            return prompt_template.format(**template_params)
+        except KeyError:
+            return prompt_template
 
 def initialize_model(model_name):
     """Initialize model client."""
@@ -260,6 +305,9 @@ def run_benchmark(scenario_name, model_name, task_params=None):
         
     except Exception as e:
         print(f"❌ Benchmark failed: {str(e)}")
+        import traceback
+        print("Full traceback:")
+        traceback.print_exc()
         raise e
     finally:
         if server_process:
