@@ -48,8 +48,6 @@ google_key.txt
 api_keys.txt
 
 # Benchmark Results & Reports
-results/
-reports/
 visualizations/
 logs/
 *.log

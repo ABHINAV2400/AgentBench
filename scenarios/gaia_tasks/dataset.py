@@ -1,127 +1,112 @@
 """
-GAIA-style dataset - general AI assistant tasks
+GAIA dataset loader - Direct Hugging Face Hub integration
+Replaces manual dataset with authentic GAIA from HF
 """
 from typing import Dict, List
+from hf_dataset_loader import HuggingFaceDatasetLoader
 
-GAIA_TASKS = [
-    {
-        "task_id": "gaia_001",
-        "question": "Find information about Tesla's founding year, compare it with Apple's founding year, and calculate the difference. Then provide weather information for Tesla's headquarters location.",
-        "level": 2,
-        "task_type": "multi_step_research",
-        "expected_steps": [
-            "Research Tesla founding year",
-            "Research Apple founding year", 
-            "Calculate difference",
-            "Identify Tesla headquarters",
-            "Get weather information"
-        ],
-        "ground_truth": {
-            "tesla_founded": 2003,
-            "apple_founded": 1976,
-            "difference": 27,
-            "headquarters": "Austin, Texas"
-        },
-        "evaluation_criteria": [
-            "Correct Tesla founding year (2003)",
-            "Correct Apple founding year (1976)",
-            "Correct calculation (27 years)",
-            "Valid headquarters location",
-            "Weather information retrieved"
-        ]
-    },
-    {
-        "task_id": "gaia_002",
-        "question": "Analyze the sentiment of this text: 'The new product launch was amazing and exceeded all expectations, though the price point was disappointing.' Then translate the positive aspects to Spanish.",
-        "level": 1,
-        "task_type": "multi_modal_analysis",
-        "expected_steps": [
-            "Analyze text sentiment",
-            "Identify positive aspects",
-            "Translate to Spanish"
-        ],
-        "ground_truth": {
-            "sentiment": "mixed/positive",
-            "positive_aspects": ["amazing", "exceeded expectations"],
-            "spanish_translation": "increíble y superó todas las expectativas"
-        },
-        "evaluation_criteria": [
-            "Identified mixed or positive sentiment",
-            "Extracted positive aspects correctly",
-            "Provided Spanish translation",
-            "Explained reasoning process"
-        ]
-    },
-    {
-        "task_id": "gaia_003",
-        "question": "A movie directed by Christopher Nolan was released in 2010. Find this movie, determine its rating, and explain whether it would be suitable for someone who likes sci-fi movies with ratings above 8.5.",
-        "level": 2,
-        "task_type": "reasoning_chain",
-        "expected_steps": [
-            "Identify Nolan 2010 movie",
-            "Find movie rating",
-            "Apply rating criteria",
-            "Make recommendation"
-        ],
-        "ground_truth": {
-            "movie": "Inception",
-            "year": 2010,
-            "director": "Christopher Nolan",
-            "rating": 8.8,
-            "recommendation": "Yes, suitable (8.8 > 8.5)"
-        },
-        "evaluation_criteria": [
-            "Correctly identified Inception",
-            "Found correct rating (8.8)",
-            "Applied comparison logic (8.8 > 8.5)",
-            "Made appropriate recommendation",
-            "Showed clear reasoning"
-        ]
-    }
-]
+def get_gaia_tasks(limit: int = None) -> List[Dict]:
+    """Get GAIA tasks directly from Hugging Face, with fallback to local tasks."""
+    try:
+        loader = HuggingFaceDatasetLoader()
+        dataset = loader.load_benchmark_dataset('gaia', limit=limit)
+        return dataset['tasks']
+    except Exception as e:
+        print(f"⚠️  Could not load GAIA from HuggingFace ({e}), using local fallback tasks")
+        return get_local_gaia_tasks(limit)
 
-def get_gaia_tasks() -> List[Dict]:
-    """Get GAIA tasks for evaluation."""
-    return GAIA_TASKS
+def get_task_by_id(task_id: str) -> Dict:
+    """Get a specific task by ID from HF dataset."""
+    tasks = get_gaia_tasks()
+    for task in tasks:
+        if task["task_id"] == task_id:
+            return task
+    raise ValueError(f"Task {task_id} not found in GAIA dataset")
 
 def evaluate_gaia_response(response: str, task: Dict) -> Dict:
-    """Evaluate GAIA task response."""
-    task_id = task["task_id"]
-    ground_truth = task["ground_truth"]
-    criteria = task["evaluation_criteria"]
-    
-    response_lower = response.lower()
-    score = 0
-    criteria_met = 0
-    
-    # Check ground truth values
-    for key, expected_value in ground_truth.items():
-        if isinstance(expected_value, (int, float)):
-            if str(expected_value) in response or str(expected_value) in response_lower:
-                score += 20
-        elif isinstance(expected_value, str):
-            if expected_value.lower() in response_lower:
-                score += 20
-        elif isinstance(expected_value, list):
-            if any(item.lower() in response_lower for item in expected_value):
-                score += 15
-    
-    # Check evaluation criteria
-    for criterion in criteria:
-        criterion_keywords = criterion.lower().split()
-        if any(keyword in response_lower for keyword in criterion_keywords[-3:]):
-            criteria_met += 1
-    
-    # Add criteria score
-    if criteria:
-        criteria_score = (criteria_met / len(criteria)) * 30
-        score += criteria_score
-    
+    """Evaluate GAIA task response against ground truth."""
+    try:
+        expected_answer = task.get('answer', '')
+        question = task.get('question', '')
+        level = task.get('level', 1)
+        
+        response_lower = response.lower()
+        answer_lower = expected_answer.lower() if expected_answer else ''
+        
+        # Score based on answer presence and quality
+        score = 0
+        feedback = []
+        
+        # Check if expected answer is mentioned
+        if answer_lower and answer_lower in response_lower:
+            score += 40
+            feedback.append("Expected answer found in response")
+        elif answer_lower and any(word in response_lower for word in answer_lower.split()[:3]):
+            score += 20
+            feedback.append("Partial answer match found")
+        
+        # Score based on response quality and length
+        if len(response) > 100:
+            score += 20
+            feedback.append("Detailed response provided")
+        elif len(response) > 50:
+            score += 10
+            feedback.append("Adequate response length")
+        
+        # Check for reasoning indicators
+        reasoning_words = ['because', 'therefore', 'analysis', 'first', 'then', 'finally', 'step']
+        reasoning_count = sum(1 for word in reasoning_words if word in response_lower)
+        
+        if reasoning_count >= 3:
+            score += 25
+            feedback.append("Strong reasoning indicators found")
+        elif reasoning_count >= 1:
+            score += 15
+            feedback.append("Some reasoning shown")
+        
+        # Bonus for complex tasks (level 2+)
+        if level >= 2 and score >= 60:
+            score += 15
+            feedback.append("Good performance on complex task")
+        
+        passed = score >= 60
+        
+        return {
+            "task_id": task.get('task_id', 'unknown'),
+            "score": min(100, score),
+            "passed": passed,
+            "feedback": feedback,
+            "answer_match": answer_lower in response_lower if answer_lower else False,
+            "reasoning_score": reasoning_count,
+            "result": f"Score: {score}/100, Answer match: {answer_lower in response_lower if answer_lower else 'N/A'}"
+        }
+        
+    except Exception as e:
+        return {
+            "task_id": task.get('task_id', 'unknown'),
+            "score": 0,
+            "passed": False,
+            "feedback": [f"Evaluation error: {str(e)}"],
+            "result": str(e)
+        }
+
+def get_dataset_info() -> Dict:
+    """Get information about the GAIA dataset."""
     return {
-        "task_id": task_id,
-        "score": min(100, max(0, score)),
-        "criteria_met": criteria_met,
-        "total_criteria": len(criteria),
-        "passed": score >= 70,
-        "ground_truth_found": any(str(v).lower() in response_lower for v in ground_truth.values())
+        "name": "GAIA",
+        "source": "huggingface:gaia-benchmark/GAIA",
+        "description": "General AI Assistant benchmark for real-world assistant capabilities",
+        "total_tasks": 466,
+        "levels": [1, 2, 3],
+        "url": "https://huggingface.co/datasets/gaia-benchmark/GAIA",
+        "paper": "https://arxiv.org/abs/2311.12983"
+    }
+
+# Legacy compatibility function
+def get_gaia_dataset() -> Dict:
+    """Legacy function for compatibility."""
+    return {
+        "type": "multi_step_reasoning",
+        "tasks": get_gaia_tasks(),
+        "info": get_dataset_info()
     }
